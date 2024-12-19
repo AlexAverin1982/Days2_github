@@ -3,12 +3,15 @@
 import os
 import argparse
 import datetime as dt
+from pathlib import Path
+
 import openpyxl
 import mysql.connector as mysql
 from openpyxl.worksheet.worksheet import Worksheet
 
 
-def detect_counter_id(template, pos, vertical: bool = False):
+def detect_counter_id(template: int, pos: int, vertical: bool = False) -> int:
+    """ return last tetrade of counter's ip """
     if vertical:
         if pos == 2:
             return 60  # lenta
@@ -37,14 +40,14 @@ def detect_counter_id(template, pos, vertical: bool = False):
             return 63  # right atrium
 
 
-def record_exists(cursor, date, counter_id):
+def record_exists(cursor, date, counter_id) -> bool:
     sql = "SELECT COUNT(PK_FK) FROM counter_value WHERE PK_FK=%s AND DATE_=%s"
     cursor.execute(sql, (counter_id, date))
     r = cursor.fetchone()
     return r[0] != 0
 
 
-def write_value_into_mysql(db, cursor, date, counter_id, value):
+def write_value_into_mysql(db, cursor, date: dt.datetime, counter_id: int, value) -> None:
     if record_exists(cursor, date, counter_id):
         sql = "UPDATE counter_value SET VAL=%s WHERE PK_FK=%s AND DATE_=%s"
         cursor.execute(sql, (value, counter_id, date))
@@ -54,71 +57,78 @@ def write_value_into_mysql(db, cursor, date, counter_id, value):
     db.commit()
 
 
-def detect_report_date(reportfilename: str, sheet: Worksheet, row: int = 1, col: int = 4):
-    def extract_date(i: int, s: str):
-        p1 = s.find('.', i + 7)
-        p2 = s.find(' ', i + 7)
+def detect_report_date(reportfilename: str, sheet: Worksheet, row: int = 1, col: int = 4) -> str | None:
+    def extract_date(start_from_pos: int, s: str) -> str:
+        p1 = s.find(".", start_from_pos + 7)
+        p2 = s.find(" ", start_from_pos + 7)
 
         if p1 == -1:
             if p2 == -1:
-                result = s[i:]
+                result = s[start_from_pos:]
             else:
-                result = s[i:p2]
+                result = s[start_from_pos:p2]
         elif p2 == -1:
             if p1 == -1:
-                result = s[i:]
+                result = s[start_from_pos:]
             else:
-                result = s[i:p1]
+                result = s[start_from_pos:p1]
         else:
-            result = s[i:min(p1, p2)]
+            result = s[start_from_pos: min(p1, p2)]
         return result
 
     # -----------------------------------------------------------------
-    if sheet.cell(row=row, column=col).value is None:  # single day report, date is extracted from filename
+    if (
+            sheet.cell(row=row, column=col).value is None
+    ):  # single day report, date is extracted from filename
         i = 1
-        l = len(reportfilename)
-        while (i <= l) and (not reportfilename[i].isdigit()):
+        filename_length = len(reportfilename)
+        while (i <= filename_length) and (not reportfilename[i].isdigit()):
             i = i + 1
-        if i > l: return None
+        if i > filename_length:
+            return None
 
         return extract_date(i, reportfilename)
     else:  # report for period, several dates in row, returned first
         val = sheet.cell(row=row, column=col).value
         if isinstance(val, dt.datetime):
-            return val.strftime('%d.%m.%Y')
+            return val.strftime("%d.%m.%Y")
         else:
             return str(val)
 
 
-def write_xlsx_to_mysql(file, db, cursor, args):
+def write_xlsx_to_mysql(file, db, cursor, args) -> None:
     if args.verbose:
-        print('Prosessing file ' + file + ' ....')
+        print("Prosessing file " + file + " ....")
 
     wb = openpyxl.load_workbook(file)
-    sheet = wb['Page 1']
+    sheet = wb["Page 1"]
 
     if hasattr(args, "layout") and isinstance(args.layout, str):
-        vertical_layout = str(args.layout).lower().startswith('v')
+        vertical_layout = str(args.layout).lower().startswith("v")
     else:
         vertical_layout = None
-    report_is_singleday = (sheet.cell(row=4, column=5).value is None)
+    report_is_singleday = sheet.cell(row=4, column=5).value is None
 
-    if vertical_layout == None:
-        vertical_layout = report_is_singleday or not (sheet.cell(row=13, column=1).value is None)
+    if vertical_layout is None:
+        vertical_layout = report_is_singleday or not (
+                sheet.cell(row=13, column=1).value is None
+        )
 
     if vertical_layout:
         currow = args.start_row
         while True:
             date = detect_report_date(os.path.basename(file), sheet, row=currow, col=1)
-            if date is None: break
-            if isinstance(date, str) and date.isalpha(): break
+            if date is None:
+                break
+            if isinstance(date, str) and date.isalpha():
+                break
             if len(str(date)) == 10:
-                dateformat = '%d.%m.%Y'
+                dateformat = "%d.%m.%Y"
             elif len(str(date)) == 8:
-                dateformat = '%d.%m.%y'
+                dateformat = "%d.%m.%y"
             else:
                 break
-            date = dt.datetime.strptime(str(date), dateformat).strftime('%Y-%m-%d')
+            date = dt.datetime.strptime(str(date), dateformat).strftime("%Y-%m-%d")
 
             for curcol in range(2, 8):
                 value = sheet.cell(row=currow, column=curcol).value
@@ -129,25 +139,29 @@ def write_xlsx_to_mysql(file, db, cursor, args):
                 elif not isinstance(value, int):
                     continue
                 if value:
-                    counter_id = detect_counter_id(int(report_is_singleday), curcol, vertical_layout)
+                    counter_id = detect_counter_id(
+                        int(report_is_singleday), curcol, vertical_layout
+                    )
                     write_value_into_mysql(db, cursor, date, counter_id, value)
-            if report_is_singleday: break
+            if report_is_singleday:
+                break
             currow += 1
-    else:               # horizontal layout
+    else:  # horizontal layout
         curcol = 4
         while True:
             date = detect_report_date(os.path.basename(file), sheet, row=1, col=curcol)
             if date is None:
                 break
-            if isinstance(date, str) and date.isalpha(): break
+            if isinstance(date, str) and date.isalpha():
+                break
             if len(str(date)) == 10:
-                dateformat = '%d.%m.%Y'
+                dateformat = "%d.%m.%Y"
             elif len(str(date)) == 8:
-                dateformat = '%d.%m.%y'
+                dateformat = "%d.%m.%y"
             else:
                 break
 
-            date = dt.datetime.strptime(str(date), dateformat).strftime('%Y-%m-%d')
+            date = dt.datetime.strptime(str(date), dateformat).strftime("%Y-%m-%d")
 
             for r in range(2, 8 + int(report_is_singleday)):
                 value = sheet.cell(row=r, column=curcol).value
@@ -158,9 +172,12 @@ def write_xlsx_to_mysql(file, db, cursor, args):
                 elif not isinstance(value, int):
                     continue
                 if value:
-                    counter_id = detect_counter_id(int(report_is_singleday), r, vertical_layout)
+                    counter_id = detect_counter_id(
+                        int(report_is_singleday), r, vertical_layout
+                    )
                     write_value_into_mysql(db, cursor, date, counter_id, value)
-            if report_is_singleday: break
+            if report_is_singleday:
+                break
             curcol += 1
     # today = dt.today()
     #
@@ -175,44 +192,68 @@ def write_xlsx_to_mysql(file, db, cursor, args):
 def check_arguments():
     def get_date_from_string(str_date: str):
         result = None
-        if str_date.find('.') >= 0:  # check length for y and Y!
+        if str_date.find(".") >= 0:  # check length for y and Y!
 
             if len(str_date) == 8:
-                result = dt.strptime(str_date, '%d.%m.%y').date()
+                result = dt.strptime(str_date, "%d.%m.%y").date()
             else:
-                result = dt.strptime(str_date, '%d.%m.%Y').date()
+                result = dt.strptime(str_date, "%d.%m.%Y").date()
 
-        elif str_date.find('/') >= 0:
+        elif str_date.find("/") >= 0:
 
             if len(str_date) == 8:
-                result = dt.strptime(str_date, '%d/%m/%y').date()
+                result = dt.strptime(str_date, "%d/%m/%y").date()
             else:
-                result = dt.strptime(str_date, '%d/%m/%Y').date()
+                result = dt.strptime(str_date, "%d/%m/%Y").date()
 
-        elif str_date.find('-') >= 0:
+        elif str_date.find("-") >= 0:
 
             if len(str_date) == 8:
-                result = dt.strptime(str_date, '%y-%m-%d').date()
+                result = dt.strptime(str_date, "%y-%m-%d").date()
             else:
-                result = dt.strptime(str_date, '%Y-%m-%d').date()
+                result = dt.strptime(str_date, "%Y-%m-%d").date()
 
         return result
 
     # анализируем параметры из командной строки
 
-    parser = argparse.ArgumentParser(prog='xls2mysql', description='write data into db from excel report',
-                                     fromfile_prefix_chars='@', prefix_chars='-/', usage=__doc__)
-    parser.add_argument("--start_row", type=int, default="4", dest="start_row",
-                        help="The first row to start data read from")
-    parser.add_argument("--verbose", dest="verbose",
-                        action='store_true', default=False,
-                        help="Verbose output for debugging")
-    parser.add_argument("-f", "--force", dest="force",
-                        action='store_true', default=False,
-                        help="Overwrite data in database even if the record already exists")
-    parser.add_argument("reportsdir",  help="directory with reports to put into database ")
-    parser.add_argument("--layout", dest="layout",
-                        help="Report table layout: horizontal or vertical (default)")
+    parser = argparse.ArgumentParser(
+        prog="xls2mysql",
+        description="write data into db from excel report",
+        fromfile_prefix_chars="@",
+        prefix_chars="-/",
+        usage=__doc__,
+    )
+    parser.add_argument(
+        "--start_row",
+        type=int,
+        default="4",
+        dest="start_row",
+        help="The first row to start data read from",
+    )
+    parser.add_argument(
+        "--verbose",
+        dest="verbose",
+        action="store_true",
+        default=False,
+        help="Verbose output for debugging",
+    )
+    parser.add_argument(
+        "-f",
+        "--force",
+        dest="force",
+        action="store_true",
+        default=False,
+        help="Overwrite data in database even if the record already exists",
+    )
+    parser.add_argument(
+        "reportsdir", help="directory with reports to put into database "
+    )
+    parser.add_argument(
+        "--layout",
+        dest="layout",
+        help="Report table layout: horizontal or vertical (default)",
+    )
     # parser.add_argument("num", nargs=’ * ’)
     # parser.add_argument("-i", "--interval", type=str, default="days", dest="interval",
     #                     help="Interval sums in cells. Values are: days, weeks, months, years")
@@ -237,7 +278,6 @@ def check_arguments():
     #                     help="Open report file in Excel when ready. Default is False")
 
     args = parser.parse_args()
-
 
     # if no_arguments_specified(args):
     #     # display help
@@ -286,24 +326,57 @@ def check_arguments():
     return args
 
 
+def read_from_ini(section: str, filename: str = '') -> dict:
+    result = {}
+    par_dir = Path(__file__).parent.absolute().parent.absolute()
+    if filename == '':
+        filename = os.path.join(par_dir, os.path.basename(__file__) + '.ini')
+    else:
+        if not os.path.isabs(filename):
+            filename = os.path.join(par_dir, filename)
+
+    if os.path.exists(filename):
+        with open(filename, 'r', encoding='utf-8') as f:
+            section_found = False
+            for line in f:
+                if section_found:
+                    if line == '':
+                        break
+                    if line.find('=') > 0:
+                        key, val = line.split('=')
+                        result[key.lower().strip()] = val.strip()
+
+                if (not section_found) and line.strip().lower().startswith(f"[{section}]"):
+                    section_found = True
+    return result
+
+
 def main():
     # открываем базу
-    db = mysql.connect(host='192.168.9.82', user='sa', password='Kristall_123456', database='days')
+    creds = read_from_ini('creds', 'db.ini')
+
+    # db = mysql.connect(host='192.168.9.82', user='sa', password='Kristall_123456', database='days')
+
+    db = mysql.connect(host=creds.get("host"), user=creds.get("user"), password=creds.get("password"),
+                       database=creds.get("database"))
     cursor = db.cursor()
     # cur.execute("SELECT VERSION()")
     # version = cur.fetchone()
     # print("Database version: {}".format(version[0]))
 
-
     args_valid = True
 
     args = check_arguments()
     reports_processed = False
-    if hasattr(args, "reportsdir"):     # single report file or reports directory is specified directly
-        if os.path.isfile(args.reportsdir):         # it's a single file
-            if os.path.exists(args.reportsdir):     # it exists
+    if hasattr(
+            args, "reportsdir"
+    ):  # single report file or reports directory is specified directly
+        if os.path.isfile(args.reportsdir):  # it's a single file
+            if os.path.exists(args.reportsdir):  # it exists
                 f = os.path.split(args.reportsdir)[1]
-                if (not f.startswith('~$')) and (f.endswith('xlsx') or f.endswith('xls')):
+                if (not f.startswith("~$")) and (
+                        f.endswith("xlsx") or f.endswith("xls")
+                ):
                     write_xlsx_to_mysql(args.reportsdir, db, cursor, args)
             reports_processed = True
         else:
@@ -311,17 +384,19 @@ def main():
     else:
         reportsdir = os.getcwd()
     if not reports_processed:
-    # формируем список *.xlsx файлов в каталоге отчетов
+        # формируем список *.xlsx файлов в каталоге отчетов
         if os.path.isabs(args.reportsdir):
             reportsdir = args.reportsdir
         else:
             reportsdir = os.path.join(os.getcwd(), args.reportsdir)
 
-        if not args_valid: exit(1)
+        if not args_valid:
+            exit(1)
         processed = list()
         for root, dirs, files in os.walk(reportsdir):
             for f in files:
-                if f.startswith('~$') or not (f.endswith('xlsx')) or (f in processed): continue
+                if f.startswith("~$") or not (f.endswith("xlsx")) or (f in processed):
+                    continue
                 write_xlsx_to_mysql(os.path.join(root, f), db, cursor, args)
                 processed.append(os.path.join(root, f))
                 # открываем каждый файл, читаем данные, пишем в базу
@@ -330,5 +405,5 @@ def main():
 
 
 # Press the green button in the gutter to run the script.
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

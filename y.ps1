@@ -1,2 +1,1 @@
-d:
-d:\python\Days2\makereport -py
+src\makereport -py

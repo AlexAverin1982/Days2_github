@@ -1,7 +1,10 @@
+import encodings
 from datetime import datetime as dt
 from datetime import timedelta as tdelta
 import os
 import shutil
+from pathlib import Path
+
 import openpyxl
 import csv
 import datetime
@@ -159,10 +162,11 @@ def check_arguments():
     return args
 
 
-def prepare_blank_report(args):
+def prepare_blank_report(args, ext: str = '.xlsx'):
     newfilename = ''
-    templatedir = os.path.join(os.getcwd(), u'шаблоны')
-    reportsdir = os.path.join(os.getcwd(), u'reports')
+    par_dir = Path(__file__).parent.absolute().parent.absolute()
+    templatedir = os.path.join(par_dir, "data", "templates")
+    reportsdir = os.path.join(par_dir, "data", "reports")
 
     if args and args.start and args.end:
         create_period_report = args.period != 'day'
@@ -170,19 +174,20 @@ def prepare_blank_report(args):
         # yd = today - tdelta(days=1)
         # prevmonday = today - tdelta(days=7)
 
+
         if create_period_report:
 
             if args.layout == 'v':
-                templatename = os.path.join(templatedir, 'шаблон отчета за период вертикальный.xlsx')
+                templatename = os.path.join(templatedir, 'шаблон отчета за период вертикальный' + ext)
             else:
-                templatename = os.path.join(templatedir, 'шаблон отчета за неделю.xlsx')
+                templatename = os.path.join(templatedir, 'шаблон отчета за неделю' + ext)
 
             newfilename = os.path.join(reportsdir,
                                        'отчет за ' + args.start.strftime('%d.%m.%y') + ' - ' + args.end.strftime(
-                                           '%d.%m.%y') + '.xlsx')
+                                           '%d.%m.%y') + ext)
         else:
-            templatename = os.path.join(templatedir, 'Шаблон отчета за день.xlsx')
-            newfilename = os.path.join(reportsdir, 'отчет за ' + args.start.strftime('%d.%m.%y') + '.xlsx')
+            templatename = os.path.join(templatedir, 'Шаблон отчета за день' + ext)
+            newfilename = os.path.join(reportsdir, 'отчет за ' + args.start.strftime('%d.%m.%y') + ext)
 
         if os.path.exists(templatename):
             shutil.copy(templatename, newfilename)
@@ -197,17 +202,17 @@ def prepare_blank_report(args):
         templatedir = os.path.join(os.getcwd(), 'шаблоны')
         reportsdir = os.path.join(os.getcwd(), 'reports')
         if create_period_report:
-            templatename = os.path.join(templatedir, 'шаблон отчета за неделю.xlsx')
+            templatename = os.path.join(templatedir, 'шаблон отчета за неделю' + ext)
             newfilename = os.path.join(reportsdir, 'отчет за ' + prevmonday.strftime('%d.%m.%y') + ' - ' + yd.strftime(
-                '%d.%m.%y') + '.xlsx')
+                '%d.%m.%y') + ext)
         else:
-            templatename = os.path.join(templatedir, 'Шаблон отчета за день.xlsx')
+            templatename = os.path.join(templatedir, 'Шаблон отчета за день' + ext)
             if args.period == 'today':
-                newfilename = os.path.join(reportsdir, 'отчет за ' + today.strftime('%d.%m.%y') + '.xlsx')
+                newfilename = os.path.join(reportsdir, 'отчет за ' + today.strftime('%d.%m.%y') + ext)
             elif args.period[0] == 'y':
-                newfilename = os.path.join(reportsdir, 'отчет за ' + today.strftime('%d.%m.%y') + '.xlsx')
+                newfilename = os.path.join(reportsdir, 'отчет за ' + today.strftime('%d.%m.%y') + ext)
             else:
-                newfilename = os.path.join(reportsdir, 'отчет за ' + args.start + '.xlsx')
+                newfilename = os.path.join(reportsdir, 'отчет за ' + args.start + ext)
 
         if os.path.exists(templatename):
             shutil.copy(templatename, newfilename)
@@ -254,7 +259,7 @@ def getcounterdata(number, date: dt):
             filedata = csv.DictReader(csvfile, dialect=dialect)
             result = 0
             for row in filedata:
-                if (row.get(u'Текст предупреждения') == u'Вход') or (row.get(u'Тип прохода') == u'Вход'):
+                if (row.get('Текст предупреждения') == 'Вход') or (row.get('Тип прохода') == 'Вход'):
                     result += 1
     return result
 
@@ -282,6 +287,7 @@ def fill_in_dayly_report_data(args, reportfilename):
 
 def fill_in_period_report_data(args, reportfilename):
     if not args: return
+
     first_data_column = 4
     first_data_row = 4
     wb = openpyxl.load_workbook(reportfilename)
@@ -347,6 +353,8 @@ def fill_in_period_report_data(args, reportfilename):
             for j, ip in enumerate(args.ips):
                 sheet.cell(row=args.rows[j], column=col).value = getcounterdata(ip, day)
 
+    if 'us-ascii' not in encodings.aliases.aliases:
+        encodings.aliases.aliases['us-ascii'] = 'ascii'
     wb.save(reportfilename)
 
 
@@ -364,13 +372,14 @@ def main():
         else:
             fill_in_dayly_report_data(args, reportfilename)
 
-    if args and args.open_after:
+    if args:
         resume_file = os.path.join(os.environ['USERPROFILE'], 'Documents', 'RESUME.XLW')
         if os.path.exists(resume_file): os.remove(resume_file)
         xl = Dispatch("Excel.Application")
         xl.Visible = True  # otherwise excel is hidden
-        xl.Workbooks.Open(reportfilename)
-        xl.Save()
+        # xl.Save()
+        if args.open_after:
+            xl.Workbooks.Open(reportfilename)
 
 
 if __name__ == '__main__':

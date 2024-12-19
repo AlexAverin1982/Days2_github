@@ -4,18 +4,23 @@ usage: reportfromdb [parameters]
 parameters:
 -id, --interval=day: table cells will contain daily sums"""
 import datetime
+
 # from datetime import date
 import os
 from datetime import datetime as dt
 from datetime import timedelta as tdelta
+from pathlib import Path
+
 import openpyxl
-from openpyxl.cell import Cell, MergedCell
+# from openpyxl.cell import Cell, MergedCell
+from openpyxl.cell import Cell
 from openpyxl.styles import PatternFill
 from calendar import monthrange
 
 # from openpyxl.utils import FORMULAE
 # from openpyxl.worksheet.dimensions import ColumnDimension, RowDimension
 from openpyxl.styles import Font, Alignment, Border, Side
+
 # import mysql.connector as mysql
 import pymysql
 import pymysql.cursors
@@ -27,17 +32,22 @@ from win32com.client import Dispatch
 # from PyQt5.QtWidgets import (QWidget, QPushButton, QLineEdit, QInputDialog, QApplication)
 # from openpyxl.worksheet.worksheet import Worksheet
 
-def test(args):
+
+def test(args) -> None:
     # выводим результаты парсинга аргументов
     print(vars(args))
 
 
-def single_day_report(args):
-    return (str(args.start).find('day') >= 0) or (str(args.end).find('day') >= 0) or (str(args.period).find('day') >= 0)
+def single_day_report(args) -> bool:
+    return (
+            (str(args.start).find("day") >= 0)
+            or (str(args.end).find("day") >= 0)
+            or (str(args.period).find("day") >= 0)
+    )
 
 
 def prepare_blank_report(args):
-    horizontal_layout = str(args.layout).startswith('h')
+    horizontal_layout = str(args.layout).startswith("h")
     # today = dt.today().date()
     #
     # # yd = (today - tdelta(days=1))
@@ -64,20 +74,30 @@ def prepare_blank_report(args):
     #         args.end = args.end
     #         args.end = args.end
 
-    templatedir = os.path.join(os.getcwd(), 'шаблоны')
-    reportsdir = os.path.join(os.getcwd(), 'reports')
+    par_dir = Path(__file__).parent.absolute().parent.absolute()
+    templatedir = os.path.join(par_dir, "data", "templates")
+    reportsdir = os.path.join(par_dir, "data", "reports")
 
     if not single_day_report(args):
         if horizontal_layout:
-            templatename = os.path.join(templatedir, 'шаблон отчета за период.xlsx')
+            templatename = os.path.join(templatedir, "шаблон отчета за период.xlsx")
         else:
-            templatename = os.path.join(templatedir, 'шаблон отчета за период вертикальный.xlsx')
-        newfilename = os.path.join(reportsdir,
-                                   'отчет за ' + args.start.strftime('%d.%m.%y') + ' - ' + args.end.strftime(
-                                       '%d.%m.%y') + '.xlsx')
+            templatename = os.path.join(
+                templatedir, "шаблон отчета за период вертикальный.xlsx"
+            )
+        newfilename = os.path.join(
+            reportsdir,
+            "отчет за "
+            + args.start.strftime("%d.%m.%y")
+            + " - "
+            + args.end.strftime("%d.%m.%y")
+            + ".xlsx",
+        )
     else:
-        templatename = os.path.join(templatedir, 'Шаблон отчета за день.xlsx')
-        newfilename = os.path.join(reportsdir, 'отчет за ' + args.start.strftime('%d.%m.%y') + '.xlsx')
+        templatename = os.path.join(templatedir, "Шаблон отчета за день.xlsx")
+        newfilename = os.path.join(
+            reportsdir, "отчет за " + args.start.strftime("%d.%m.%y") + ".xlsx"
+        )
 
     if os.path.exists(templatename):
         shutil.copy(templatename, newfilename)
@@ -86,14 +106,15 @@ def prepare_blank_report(args):
 
 
 def get_data_from_db(cursor, date_start, date_end):
-    sql = f"SELECT NAME, DATE_, VAL FROM counter_value JOIN counter ON PK=PK_FK WHERE DATE_ BETWEEN '{date_start}' AND '{date_end}' ORDER BY DATE_, DISPLAYORDER"
+    sql = "SELECT NAME, DATE_, VAL FROM counter_value JOIN counter ON PK=PK_FK " + \
+          f"WHERE DATE_ BETWEEN '{date_start}' AND '{date_end}' ORDER BY DATE_, DISPLAYORDER"
     cursor.execute(sql)
     return cursor.fetchall()
 
 
 def fill_in_dayly_report_data(cursor, args, reportfilename):
     wb = openpyxl.load_workbook(reportfilename)
-    sheet = wb['Page 1']
+    sheet = wb["Page 1"]
     yd = (dt.today() - tdelta(days=1)).date()
     if not args.start:
         report_date = yd
@@ -104,8 +125,8 @@ def fill_in_dayly_report_data(cursor, args, reportfilename):
 
     start_row = 3
     for rec in records:
-        cell = 'D' + str(start_row)
-        val = rec['VAL']
+        cell = "D" + str(start_row)
+        val = rec["VAL"]
         if val:
             sheet[cell] = val
         else:
@@ -115,11 +136,15 @@ def fill_in_dayly_report_data(cursor, args, reportfilename):
     wb.save(reportfilename)
 
 
-def set_cell_value_and_style(cell: Cell, value, no_borders: bool = False, layout: str = 'h'):
+def set_cell_value_and_style(
+        cell: Cell, value, no_borders: bool = False, layout: str = "h"
+):
     border_side = Side(border_style="thin")
-    square_border = Border(top=border_side, right=border_side, bottom=border_side, left=border_side)
-    align_center = Alignment(horizontal="center", vertical='center')
-    font = Font(name='Arial', size=14)
+    square_border = Border(
+        top=border_side, right=border_side, bottom=border_side, left=border_side
+    )
+    align_center = Alignment(horizontal="center", vertical="center")
+    font = Font(name="Arial", size=14)
 
     cell.value = value
     if no_borders:
@@ -129,17 +154,19 @@ def set_cell_value_and_style(cell: Cell, value, no_borders: bool = False, layout
     cell.alignment = align_center
     cell.font = font
 
-    cell.number_format = '### ### ###'
+    cell.number_format = "### ### ###"
 
-    if (layout == 'h') and (cell.row in [6, 7, 8]):
-        cell.fill = PatternFill(start_color="DBDBDB", end_color="DBDBDB", fill_type="solid")
+    if (layout == "h") and (cell.row in [6, 7, 8]):
+        cell.fill = PatternFill(
+            start_color="DBDBDB", end_color="DBDBDB", fill_type="solid"
+        )
 
     return cell
 
 
 def fill_in_period_report_data(cursor, args, reportfilename):
     wb = openpyxl.load_workbook(reportfilename)
-    sheet = wb['Page 1']  # read from ini
+    sheet = wb["Page 1"]  # read from ini
 
     today = dt.today().date()  # setting up period boundaries
     # # yd = (today - tdelta(days=1)).date()
@@ -147,25 +174,34 @@ def fill_in_period_report_data(cursor, args, reportfilename):
     #
     # while dt.weekday(prevmonday): prevmonday = prevmonday - tdelta(days=1)
 
-    records = get_data_from_db(cursor, args.start, args.end + tdelta(days=2))  # obtaining data from db
+    records = get_data_from_db(
+        cursor, args.start, args.end + tdelta(days=2)
+    )  # obtaining data from db
     record_length = 6  # FIXME: read from ini, what is it, number of counters?
     total_days_count = (len(records)) // record_length
 
-    if total_days_count < ((args.end - args.start).days + 1): total_days_count = ((args.end - args.start).days + 1)
+    if total_days_count < ((args.end - args.start).days + 1):
+        total_days_count = (args.end - args.start).days + 1
 
-    if args.layout == 'h':
-        # -----------------------------------horizontal layout ----------------------------------------------------------
+    if args.layout == "h":
+        # -----------------------------------horizontal layout --------------------------------------------------
         first_day_col = 4  # read from ini             # table settings
         last_record_row = 12  # read from ini
-        first_column_letter = 'D'  # used in formulae
-        last_column_letter = 'D'
+        first_column_letter = "D"  # used in formulae
+        last_column_letter = "D"
 
         days_count = 0  # loop counters
         cur_date = args.start
 
-        for column in sheet.iter_cols(min_row=0, min_col=first_day_col, max_row=last_record_row,
-                                      max_col=total_days_count + first_day_col):
-            set_cell_value_and_style(column[0], cur_date.strftime('%d.%m.%Y'), layout=args.layout)
+        for column in sheet.iter_cols(
+                min_row=0,
+                min_col=first_day_col,
+                max_row=last_record_row,
+                max_col=total_days_count + first_day_col,
+        ):
+            set_cell_value_and_style(
+                column[0], cur_date.strftime("%d.%m.%Y"), layout=args.layout
+            )
 
             if column[0].col_idx == first_day_col:
                 first_column_letter = column[0].column_letter
@@ -174,21 +210,43 @@ def fill_in_period_report_data(cursor, args, reportfilename):
 
             row = 1
 
-            day_records = records[days_count * record_length: (days_count + 1) * record_length]  # getting data slice for  current period
+            day_records = records[
+                          days_count * record_length: (days_count + 1) * record_length
+                          ]  # getting data slice for  current period
             for rec in day_records:
-                if rec['VAL']:
-                    val = rec['VAL']
+                if rec["VAL"]:
+                    val = rec["VAL"]
                 else:
                     val = 0
                 set_cell_value_and_style(column[row], val, layout=args.layout)
                 row = row + 1
 
-            s = '=SUM(' + column[0].column_letter + str(record_length) + ':' + column[0].column_letter + str(
-                record_length + 1) + ')'
+            s = (
+                    "=SUM("
+                    + column[0].column_letter
+                    + str(record_length)
+                    + ":"
+                    + column[0].column_letter
+                    + str(record_length + 1)
+                    + ")"
+            )
             set_cell_value_and_style(column[row], s, layout=args.layout)
-            s = '=SUM(' + column[0].column_letter + '2:' + column[0].column_letter + str(record_length - 1) + ')'
+            s = (
+                    "=SUM("
+                    + column[0].column_letter
+                    + "2:"
+                    + column[0].column_letter
+                    + str(record_length - 1)
+                    + ")"
+            )
             set_cell_value_and_style(column[row + 1], s, layout=args.layout)
-            sheet.merge_cells(column[0].column_letter + str(row + 2) + ':' + column[0].column_letter + str(row + 3))
+            sheet.merge_cells(
+                column[0].column_letter
+                + str(row + 2)
+                + ":"
+                + column[0].column_letter
+                + str(row + 3)
+            )
             days_count = days_count + 1
 
             if cur_date == args.end:
@@ -198,35 +256,58 @@ def fill_in_period_report_data(cursor, args, reportfilename):
         #  --------------------------------- end of loop ----------------
         ldc = total_days_count + first_day_col - 1
 
-        for column in sheet.iter_cols(min_row=1, min_col=ldc, max_row=last_record_row, max_col=ldc):
-            set_cell_value_and_style(column[0], 'Итог', layout=args.layout)
+        for column in sheet.iter_cols(
+                min_row=1, min_col=ldc, max_row=last_record_row, max_col=ldc
+        ):
+            set_cell_value_and_style(column[0], "Итог", layout=args.layout)
             for i in range(1, record_length + 3):
-                s = '=SUM(' + first_column_letter + str(i + 1) + ':' + last_column_letter + str(i + 1) + ')'
+                s = (
+                        "=SUM("
+                        + first_column_letter
+                        + str(i + 1)
+                        + ":"
+                        + last_column_letter
+                        + str(i + 1)
+                        + ")"
+                )
                 set_cell_value_and_style(column[i], s, layout=args.layout)
 
         sheet.merge_cells(
-            column[0].column_letter + str(record_length + 3) + ':' + column[0].column_letter + str(record_length + 4))
+            column[0].column_letter
+            + str(record_length + 3)
+            + ":"
+            + column[0].column_letter
+            + str(record_length + 4)
+        )
 
         for column in sheet.iter_cols(min_col=first_day_col, max_col=ldc):
             sheet.column_dimensions[column[0].column_letter].width = 16
 
-        set_cell_value_and_style(sheet.cell(row=12, column=1), 'Дата построения отчета: ' + today.strftime('%d.%m.%Y'),
-                                 no_borders=True, layout=args.layout)
+        set_cell_value_and_style(
+            sheet.cell(row=12, column=1),
+            "Дата построения отчета: " + today.strftime("%d.%m.%Y"),
+            no_borders=True,
+            layout=args.layout,
+        )
     else:
-        # -----------------------------------vertical layout -----------------------------------------------------------
+        # -----------------------------------vertical layout -------------------------------------------------------
         first_day_col = 4  # TODO: read from ini             # table settings
         first_day_row = 4
         last_record_row = first_day_row + total_days_count  # read from ini
-        first_record_col_letter = 'B'
-        last_record_col_letter = 'E'
+        # first_record_col_letter = "B"
+        # last_record_col_letter = "E"
         total_column = 8
-        first_column_letter = 'A'  # used in formulae
-        last_column_letter = 'D'
+        first_column_letter = "A"  # used in formulae
+        last_column_letter = "D"
 
         days_count = 0  # loop counters
         cur_date = args.start
-        for row in sheet.iter_rows(min_row=first_day_row, min_col=0, max_row=last_record_row, max_col=9):
-            set_cell_value_and_style(row[0], cur_date.strftime('%d.%m.%Y'), layout=args.layout)
+        for row in sheet.iter_rows(
+                min_row=first_day_row, min_col=0, max_row=last_record_row, max_col=9
+        ):
+            set_cell_value_and_style(
+                row[0], cur_date.strftime("%d.%m.%Y"), layout=args.layout
+            )
 
             # if row[0].col_idx == first_day_col:
             #     first_row_letter = row[0].row_letter
@@ -234,32 +315,50 @@ def fill_in_period_report_data(cursor, args, reportfilename):
             #     last_row_letter = row[0].row_letter
 
             col = 1
-            day_records = records[days_count * record_length: (days_count + 1) * record_length]  # getting data slice for  current period
+            day_records = records[
+                          days_count * record_length: (days_count + 1) * record_length
+                          ]  # getting data slice for  current period
 
             for rec in day_records:
-                if rec['VAL']:
-                    val = rec['VAL']
+                if rec["VAL"]:
+                    val = rec["VAL"]
                 else:
                     val = 0
-                if rec['NAME'] == 'Lenta':
+                if rec["NAME"] == "Lenta":
                     col = 1
-                elif rec['NAME'] == 'Central':
+                elif rec["NAME"] == "Central":
                     col = 2
-                elif rec['NAME'] == 'Door31':
+                elif rec["NAME"] == "Door31":
                     col = 3
-                elif rec['NAME'] == 'FoodPark':
+                elif rec["NAME"] == "FoodPark":
                     col = 4
-                elif rec['NAME'] == 'LeftAtrium':
+                elif rec["NAME"] == "LeftAtrium":
                     col = 5
-                elif rec['NAME'] == 'RightAtrium':
+                elif rec["NAME"] == "RightAtrium":
                     col = 6
                 set_cell_value_and_style(row[col], val, layout=args.layout)
                 # col = col + 1
             col = 7
-            s = '=SUM(F' + str(first_day_row + days_count) + ':G' + str(first_day_row + days_count) + ')'
-            set_cell_value_and_style(row[col], s, layout=args.layout)  # second floor total
-            s = '=SUM(B' + str(first_day_row + days_count) + ':E' + str(first_day_row + days_count) + ')'
-            set_cell_value_and_style(row[total_column], s, layout=args.layout)  # first floor total
+            s = (
+                    "=SUM(F"
+                    + str(first_day_row + days_count)
+                    + ":G"
+                    + str(first_day_row + days_count)
+                    + ")"
+            )
+            set_cell_value_and_style(
+                row[col], s, layout=args.layout
+            )  # second floor total
+            s = (
+                    "=SUM(B"
+                    + str(first_day_row + days_count)
+                    + ":E"
+                    + str(first_day_row + days_count)
+                    + ")"
+            )
+            set_cell_value_and_style(
+                row[total_column], s, layout=args.layout
+            )  # first floor total
             # sheet.merge_cells(row[0].row_letter + str(row + 2) + ':' + row[0].row_letter + str(row + 3))
             days_count = days_count + 1
 
@@ -268,81 +367,156 @@ def fill_in_period_report_data(cursor, args, reportfilename):
             else:
                 cur_date = cur_date + tdelta(days=1)
         #  --------------------------------- end of loop ----------------
-        ldr = total_days_count + first_day_row#  - 1
+        ldr = total_days_count + first_day_row
 
         for col in sheet.iter_cols(min_row=ldr, min_col=0, max_row=ldr, max_col=9):
             if col[0].col_idx == 1:
-                set_cell_value_and_style(col[0], 'Итог', layout=args.layout)
+                set_cell_value_and_style(col[0], "Итог", layout=args.layout)
             else:
                 column_letter = col[0].column_letter
-                s = '=SUM(' + column_letter + str(first_day_row) + ':' + column_letter + str(ldr - 1) + ')'
+                s = (
+                        "=SUM("
+                        + column_letter
+                        + str(first_day_row)
+                        + ":"
+                        + column_letter
+                        + str(ldr - 1)
+                        + ")"
+                )
                 set_cell_value_and_style(col[0], s, layout=args.layout)
 
-        set_cell_value_and_style(sheet.cell(row=1, column=1),
-                                 'Отчет по посещаемости ТРК Ясень за: ' + args.start.strftime(
-                                     '%d.%m.%Y') + ' - ' + args.end.strftime('%d.%m.%Y'),
-                                 no_borders=True, layout=args.layout)
-        sheet.merge_cells(start_row=ldr + 3, start_column=1, end_row=ldr + 3, end_column=4)
-        set_cell_value_and_style(sheet.cell(row=ldr + 3, column=1),
-                                 'Дата построения отчета: ' + today.strftime('%d.%m.%Y'),
-                                 no_borders=True, layout=args.layout)
+        set_cell_value_and_style(
+            sheet.cell(row=1, column=1),
+            "Отчет по посещаемости ТРК Ясень за: "
+            + args.start.strftime("%d.%m.%Y")
+            + " - "
+            + args.end.strftime("%d.%m.%Y"),
+            no_borders=True,
+            layout=args.layout,
+        )
+        sheet.merge_cells(
+            start_row=ldr + 3, start_column=1, end_row=ldr + 3, end_column=4
+        )
+        set_cell_value_and_style(
+            sheet.cell(row=ldr + 3, column=1),
+            "Дата построения отчета: " + today.strftime("%d.%m.%Y"),
+            no_borders=True,
+            layout=args.layout,
+        )
     wb.save(reportfilename)
 
 
 def no_arguments_specified(args) -> bool:
-    return (args.period in ['day', 'month', 'year', 'hour']) and (not args.start) and (not args.end)
+    return (
+            (args.period in ["day", "month", "year", "hour"])
+            and (not args.start)
+            and (not args.end)
+    )
 
 
 def check_arguments():
     def get_date_from_string(str_date: str):
         result = None
-        if str_date.find('.') >= 0:  # check length for y and Y!
+        if str_date.find(".") >= 0:  # check length for y and Y!
 
             if len(str_date) == 8:
-                result = dt.strptime(str_date, '%d.%m.%y').date()
+                result = dt.strptime(str_date, "%d.%m.%y").date()
             else:
-                result = dt.strptime(str_date, '%d.%m.%Y').date()
+                result = dt.strptime(str_date, "%d.%m.%Y").date()
 
-        elif str_date.find('/') >= 0:
+        elif str_date.find("/") >= 0:
 
             if len(str_date) == 8:
-                result = dt.strptime(str_date, '%d/%m/%y').date()
+                result = dt.strptime(str_date, "%d/%m/%y").date()
             else:
-                result = dt.strptime(str_date, '%d/%m/%Y').date()
+                result = dt.strptime(str_date, "%d/%m/%Y").date()
 
-        elif str_date.find('-') >= 0:
+        elif str_date.find("-") >= 0:
 
             if len(str_date) == 8:
-                result = dt.strptime(str_date, '%y-%m-%d').date()
+                result = dt.strptime(str_date, "%y-%m-%d").date()
             else:
-                result = dt.strptime(str_date, '%Y-%m-%d').date()
+                result = dt.strptime(str_date, "%Y-%m-%d").date()
 
         return result
 
     # анализируем параметры из командной строки
 
-    parser = argparse.ArgumentParser(prog='reportfromdb', description='fetch data from db and create excel report',
-                                     fromfile_prefix_chars='@', prefix_chars='-/', usage=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="reportfromdb",
+        description="fetch data from db and create excel report",
+        fromfile_prefix_chars="@",
+        prefix_chars="-/",
+        usage=__doc__,
+    )
     # parser.add_argument("num", nargs=’ * ’)
-    parser.add_argument("-i", "--interval", type=str, default="days", dest="interval",
-                        help="Interval sums in cells. Values are: days, weeks, months, years")
-    parser.add_argument("-l", "--layout", type=str, default="horizontal", dest="layout",
-                        help="Report table orientation. Values are: horizontal, vertical")
-    parser.add_argument("-s", "--start", type=str, default="", dest="start",
-                        help="Report start date. Values are: today, yesterday, any date")
-    parser.add_argument("-e", "--end", type=str, default="", dest="end",
-                        help="Report end date. Values are: today, yesterday, any date")
-    parser.add_argument("-p", "--period", type=str, default="", dest="period",
-                        help="Report interval used instead of start and end dates. Values are: day, week, month, year, lastweek, lastmonth, lastyear, thisweek, thismonth, thisyear")
+    parser.add_argument(
+        "-i",
+        "--interval",
+        type=str,
+        default="days",
+        dest="interval",
+        help="Interval sums in cells. Values are: days, weeks, months, years",
+    )
+    parser.add_argument(
+        "-l",
+        "--layout",
+        type=str,
+        default="horizontal",
+        dest="layout",
+        help="Report table orientation. Values are: horizontal, vertical",
+    )
+    parser.add_argument(
+        "-s",
+        "--start",
+        type=str,
+        default="",
+        dest="start",
+        help="Report start date. Values are: today, yesterday, any date",
+    )
+    parser.add_argument(
+        "-e",
+        "--end",
+        type=str,
+        default="",
+        dest="end",
+        help="Report end date. Values are: today, yesterday, any date",
+    )
+    parser.add_argument(
+        "-p",
+        "--period",
+        type=str,
+        default="",
+        dest="period",
+        help="Report interval used instead of start and end dates. " +
+             "Values are: day, week, month, year, lastweek, lastmonth, lastyear, thisweek, thismonth, thisyear",
+    )
 
-    parser.add_argument("-t", "--test", dest="test",
-                        action='store_true', default=False,
-                        help="Test mode: reads from stdin")
+    parser.add_argument(
+        "-t",
+        "--test",
+        dest="test",
+        action="store_true",
+        default=False,
+        help="Test mode: reads from stdin",
+    )
 
-    parser.add_argument("-o", "--open_after", default=False, dest="open_after", action='store_true',
-                        help="Open report file in Excel when ready. Default is False")
+    parser.add_argument(
+        "-o",
+        "--open_after",
+        default=False,
+        dest="open_after",
+        action="store_true",
+        help="Open report file in Excel when ready. Default is False",
+    )
 
-    parser.add_argument("-y", "--year", default=dt.today().date().year, dest="year", help="The year of report")
+    parser.add_argument(
+        "-y",
+        "--year",
+        default=dt.today().date().year,
+        dest="year",
+        help="The year of report",
+    )
 
     args = parser.parse_args()
 
@@ -356,9 +530,10 @@ def check_arguments():
             a = a.lower()
 
     today = dt.today().date()
-    yd = (today - tdelta(days=1))
-    prevmonday = (today - tdelta(days=7))
-    while dt.weekday(prevmonday): prevmonday = (prevmonday - tdelta(days=1))
+    yd = today - tdelta(days=1)
+    prevmonday = today - tdelta(days=7)
+    while dt.weekday(prevmonday):
+        prevmonday = prevmonday - tdelta(days=1)
 
     # create_period_report = not single_day_report(args)
 
@@ -367,7 +542,9 @@ def check_arguments():
     if not single_day_report(args):
         if not args.start:
             args.start = prevmonday
-            args.end = args.start + tdelta(days=6)  # default period report is for last week
+            args.end = args.start + tdelta(
+                days=6
+            )  # default period report is for last week
             args.end = args.end
             # elif not args.end:
         #     args.end = args.start + tdelta(days=6)
@@ -375,17 +552,17 @@ def check_arguments():
         args.start = args.end = yd
 
     if args.start and isinstance(args.start, str):
-        if args.start == 'yesterday':
+        if args.start == "yesterday":
             args.start = today - tdelta(days=1)
-        elif args.start == 'today':
+        elif args.start == "today":
             args.start = today
         # TODO: more word variants like lastmonday
         else:
             args.start = get_date_from_string(args.start)
         if args.end and isinstance(args.end, str):
-            if args.end == 'yesterday':
+            if args.end == "yesterday":
                 args.end = today - tdelta(days=1)
-            elif args.end == 'today':
+            elif args.end == "today":
                 args.end = today
             else:
                 args.end = get_date_from_string(args.end)
@@ -393,8 +570,20 @@ def check_arguments():
     if args.period:
 
         args.period = str(args.period).lower()
-        period_data = [(1, "ja", 31), (2, "f", 28), (3, "mar", 31), (4, "ap", 30), (5, "may", 31), (6, "jun", 30),
-                       (7, "jul", 31), (8, "au", 31), (9, "s", 30), (10, "o", 31), (11, "n", 30), (12, "d", 31)]
+        period_data = [
+            (1, "ja", 31),
+            (2, "f", 28),
+            (3, "mar", 31),
+            (4, "ap", 30),
+            (5, "may", 31),
+            (6, "jun", 30),
+            (7, "jul", 31),
+            (8, "au", 31),
+            (9, "s", 30),
+            (10, "o", 31),
+            (11, "n", 30),
+            (12, "d", 31),
+        ]
         period_detected = False
 
         for n, m, e in period_data:
@@ -402,28 +591,31 @@ def check_arguments():
             if period_detected:
                 args.start = datetime.date(args.year, n, 1)
                 if args.start > today:
-                    args.year = args.year-1
+                    args.year = args.year - 1
                     args.start = datetime.date(args.year, n, 1)
-                if (n == 2) and (args.year % 4): e = 29
+                if (n == 2) and (args.year % 4):
+                    e = 29
                 args.end = datetime.date(args.year, n, e)
                 break
         if not period_detected:
-            if args.period[:5] == 'lastm':
+            if args.period[:5] == "lastm":
                 mr = monthrange(today.year, today.month)
                 month_ago = today - tdelta(days=mr[1])
                 args.start = datetime.date(month_ago.year, month_ago.month, 1)
                 args.end = datetime.date(today.year, today.month, 1) - tdelta(days=1)
-            elif args.period[:5] == 'lastw':
+            elif args.period[:5] == "lastw":
                 args.start = today - tdelta(days=7)
-                while dt.weekday(args.start): args.start = args.start - tdelta(days=1)
+                while dt.weekday(args.start):
+                    args.start = args.start - tdelta(days=1)
                 args.end = args.start + tdelta(days=6)
             elif str(args.period).lower().startswith("mon"):
                 args.end = args.start + tdelta(days=31)
-                while args.start.month != args.end.month: args.end = args.end - tdelta(days=1)
+                while args.start.month != args.end.month:
+                    args.end = args.end - tdelta(days=1)
             elif str(args.period).lower().startswith("mar"):
                 if today.month < 3:
-                    args.start = datetime.date(today.year-1, 3, 1)
-                    args.end = datetime.date(today.year-1, 3, 31)
+                    args.start = datetime.date(today.year - 1, 3, 1)
+                    args.end = datetime.date(today.year - 1, 3, 31)
             elif str(args.period).lower().startswith("apr"):
                 if today.month < 4:
                     args.start = datetime.date(today.year - 1, 4, 1)
@@ -462,8 +654,10 @@ def check_arguments():
     args.interval = args.interval[0]
     args.layout = args.layout[0]
 
-    if args.interval not in ('d', 'w', 'm', 'y'): args.interval = 'd'
-    if args.layout not in ('h', 'v'): args.layout = 'h'
+    if args.interval not in ("d", "w", "m", "y"):
+        args.interval = "d"
+    if args.layout not in ("h", "v"):
+        args.layout = "h"
 
     return args
 
@@ -473,8 +667,13 @@ def main():
     # to this moment, period borders in args must be specified explicitly! no more recalculations!
     if args.test:
         test(args)
-    db = pymysql.connect(host='192.168.9.82', user='sa', password='Kristall_123456', database='days',
-                         cursorclass=pymysql.cursors.DictCursor)
+    db = pymysql.connect(
+        host="192.168.9.82",
+        user="sa",
+        password="Kristall_123456",
+        database="days",
+        cursorclass=pymysql.cursors.DictCursor,
+    )
     cursor = db.cursor()
 
     reportfilename = prepare_blank_report(args)
@@ -485,8 +684,12 @@ def main():
         fill_in_period_report_data(cursor, args, reportfilename)
 
     if args.open_after:
-        if os.path.exists(os.path.join(os.environ['USERPROFILE'], 'Documents', 'RESUME.XLW')):
-            os.remove(os.path.join(os.environ['USERPROFILE'], 'Documents', 'RESUME.XLW'))
+        if os.path.exists(
+                os.path.join(os.environ["USERPROFILE"], "Documents", "RESUME.XLW")
+        ):
+            os.remove(
+                os.path.join(os.environ["USERPROFILE"], "Documents", "RESUME.XLW")
+            )
         xl = Dispatch("Excel.Application")
         xl.Visible = True  # otherwise excel is hidden
         xl.Workbooks.Open(reportfilename)
@@ -497,5 +700,5 @@ def main():
 
 
 # Press the green button in the gutter to run the script.
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
